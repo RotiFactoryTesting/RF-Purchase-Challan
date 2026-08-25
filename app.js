@@ -991,6 +991,10 @@ async function addNewUser() {
     errEl.innerHTML = `<div class="error-msg">Username can only have letters, numbers, dots, underscores, or hyphens — no spaces or @.</div>`;
     return;
   }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errEl.innerHTML = `<div class="error-msg">That email address isn't valid — make sure it includes an @ and a proper domain, e.g. name@example.com.</div>`;
+    return;
+  }
 
   const btn = document.getElementById("addUserBtn");
   btn.disabled = true; btn.textContent = "Adding…";
@@ -1020,9 +1024,16 @@ async function addNewUser() {
     document.getElementById("nuPassword").value = "";
     document.getElementById("nuDept").value = "";
   } catch (e) {
-    const msg = e.code === "auth/email-already-in-use"
-      ? "That email is already used by another login — try a '+' alias, e.g. yourteam+" + username + "@gmail.com."
-      : friendlyAuthError(e);
+    let msg;
+    if (e.code === "auth/email-already-in-use") {
+      msg = "That email is already used by another login — try a '+' alias, e.g. yourteam+" + username + "@gmail.com.";
+    } else if (e.code === "auth/invalid-email") {
+      msg = "That email address isn't valid — make sure it includes an @ and a proper domain, e.g. name@example.com.";
+    } else if (e.code === "auth/weak-password") {
+      msg = "That password is too weak — use at least 6 characters.";
+    } else {
+      msg = "Couldn't add user — please check the details and try again.";
+    }
     errEl.innerHTML = `<div class="error-msg">${esc(msg)}</div>`;
   } finally {
     await deleteApp(secondary);
@@ -1132,5 +1143,3 @@ function drawItemMasterRows() {
     btn.onclick = async () => { await deleteDoc(doc(db, "itemMaster", btn.dataset.id)); toast("Item removed."); };
   });
 }
-
-
