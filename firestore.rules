@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function myRole() {
+      return myProfile().role;
+    }
+    function isActive() {
+      return myProfile().active != false;
+    }
+
+    // Users can always read their own profile (needed right after login,
+    // before we know their role). Only admins can list/write other users.
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || myRole() == 'admin');
+      allow create, update, delete: if isSignedIn() && myRole() == 'admin';
+    }
+
+    // Everyone signed in and active can see the full ledger (dashboard
+    // visibility was an explicit requirement). Writes are role-gated.
+    match /challans/{id} {
+      allow read: if isSignedIn() && isActive();
+
+      allow create: if isSignedIn() && isActive()
+                    && (myRole() == 'staff' || myRole() == 'admin')
+                    && request.resource.data.status == 'pending_approval';
+
+      allow update: if isSignedIn() && isActive() && (
+                      // Manager approving/rejecting a pending item
+                      ((myRole() == 'manager' || myRole() == 'admin')
+                        && resource.data.status == 'pending_approval'
+                        && request.resource.data.status in ['approved', 'rejected'])
+                      ||
+                      // Purchase staff completing an approved item
+                      ((myRole() == 'purchase' || myRole() == 'admin')
+                        && resource.data.status == 'approved'
+                        && request.resource.data.status == 'purchased')
+                    );
+
+      allow delete: if isSignedIn() && myRole() == 'admin';
+    }
+
+    // Sequential challan-number counter, advanced by transaction.
+    match /counters/{id} {
+      allow read: if isSignedIn() && isActive();
+      allow write: if isSignedIn() && isActive() && (myRole() == 'staff' || myRole() == 'admin');
+    }
+
+    // Item master (dropdown list) — anyone signed in can read;
+    // only admins maintain it.
+    match /itemMaster/{id} {
+      allow read: if isSignedIn() && isActive();
+      allow write: if isSignedIn() && myRole() == 'admin';
+    }
+  }
+}
