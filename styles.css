@@ -84,8 +84,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .topbar .brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
+}
+.topbar .brand .brand-logo {
+  height: 34px;
+  width: auto;
+  display: block;
+  background: #fff;
+  border-radius: 4px;
+  padding: 2px 6px;
 }
 .topbar .brand .rf {
   font-family: 'Barlow Condensed', sans-serif;

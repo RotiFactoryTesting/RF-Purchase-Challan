@@ -83,7 +83,7 @@ onAuthStateChanged(auth, async (user) => {
       await signOut(auth);
       return;
     }
-    currentUser = { uid: user.uid, email: user.email, name: profile.name, role: profile.role, department: profile.department || "" };
+    currentUser = { uid: user.uid, email: user.email, name: profile.name, role: profile.role, department: profile.department || "", username: profile.username || "" };
     currentView = "dashboard";
     startListeners();
     renderShell();
@@ -168,7 +168,7 @@ function renderShell() {
   $app.innerHTML = `
     <div class="topbar">
       <div class="brand">
-        <span class="rf">RF FACTORY</span>
+        <img src="assets/logo.webp" alt="Roti Factory" class="brand-logo">
         <span class="sub">Purchase Challan</span>
       </div>
       <div class="who">
@@ -515,6 +515,7 @@ async function submitNewChallan() {
       challanNo,
       department: dept,
       requestedByName,
+      requestedByUsername: currentUser.username || "",
       requestedByUid: currentUser.uid,
       items,
       status: "pending_approval",
@@ -563,7 +564,7 @@ function renderDetail() {
     <div class="detail-header">
       <div class="title-block">
         <div class="challan-no">${esc(c.challanNo)}</div>
-        <div class="meta">${esc(c.department)} · Requested by ${esc(c.requestedByName)} · ${fmtDate(c.createdAt)}</div>
+        <div class="meta">${esc(c.department)} · Requested by ${esc(c.requestedByName)}${c.requestedByUsername ? " (" + esc(c.requestedByUsername) + ")" : ""} · ${fmtDate(c.createdAt)}</div>
       </div>
       <span class="stamp large ${STATUS_STAMP_CLASS[c.status]}">${STATUS_LABEL[c.status]}</span>
     </div>
@@ -596,7 +597,7 @@ function renderDetail() {
 
     ${c.status === "cancelled" ? `
       <div class="card" style="text-align:center;color:var(--ink-soft);">
-        Cancelled by ${esc(c.cancelledByName || "—")} on ${fmtDate(c.cancelledAt)}${c.cancelReason ? " — " + esc(c.cancelReason) : ""}
+        Cancelled by ${esc(c.cancelledByName || "—")}${c.cancelledByUsername ? " (" + esc(c.cancelledByUsername) + ")" : ""} on ${fmtDate(c.cancelledAt)}${c.cancelReason ? " — " + esc(c.cancelReason) : ""}
       </div>
     ` : ""}
 
@@ -623,6 +624,7 @@ async function cancelChallan(challanId) {
     await updateDoc(doc(db, "challans", challanId), {
       status: "cancelled",
       cancelledByName: currentUser.name,
+      cancelledByUsername: currentUser.username || "",
       cancelledByUid: currentUser.uid,
       cancelledAt: Timestamp.now()
     });
@@ -643,7 +645,7 @@ function renderApprovalCard(c) {
     card.innerHTML = `
       <div class="kv-grid">
         <div class="kv"><div class="k">Decision</div><div class="v"><span class="stamp ${a.decision === "approved" ? "approved" : "rejected"}">${a.decision === "approved" ? "Approved" : "Rejected"}</span></div></div>
-        <div class="kv"><div class="k">Manager Sign. &amp; Date</div><div class="v">${esc(a.byName)} · ${fmtDate(a.at)}</div></div>
+        <div class="kv"><div class="k">Manager Sign. &amp; Date</div><div class="v">${esc(a.byName)}${a.byUsername ? " (" + esc(a.byUsername) + ")" : ""} · ${fmtDate(a.at)}</div></div>
       </div>
       ${a.note ? `<div class="kv" style="margin-top:12px;"><div class="k">Note</div><div class="v">${esc(a.note)}</div></div>` : ""}
     `;
@@ -679,7 +681,7 @@ async function decideApproval(challanId, decision) {
   const note = document.getElementById("approvalNote")?.value.trim() || "";
   try {
     await updateDoc(doc(db, "challans", challanId), {
-      managerApproval: { decision, note, byName: currentUser.name, byUid: currentUser.uid, at: Timestamp.now() },
+      managerApproval: { decision, note, byName: currentUser.name, byUsername: currentUser.username || "", byUid: currentUser.uid, at: Timestamp.now() },
       status: decision === "approved" ? "approved" : "rejected"
     });
     toast(decision === "approved" ? "Requisition approved." : "Requisition rejected.");
@@ -688,6 +690,8 @@ async function decideApproval(challanId, decision) {
     toast("Couldn't save decision — please try again.", true);
   }
 }
+
+let draftBillPhoto = null; // data URL string, compressed client-side before saving
 
 function renderPurchaseCard(c) {
   const card = document.getElementById("purchaseCard");
@@ -698,13 +702,19 @@ function renderPurchaseCard(c) {
     const p = c.purchase;
     card.innerHTML = `
       <div class="kv-grid">
-        <div class="kv"><div class="k">Purchased By</div><div class="v">${esc(p.purchasedByName)}</div></div>
+        <div class="kv"><div class="k">Purchased By</div><div class="v">${esc(p.purchasedByName)}${p.purchasedByUsername ? " (" + esc(p.purchasedByUsername) + ")" : ""}</div></div>
         <div class="kv"><div class="k">Vendor / Shop</div><div class="v">${esc(p.vendor)}</div></div>
         <div class="kv"><div class="k">Bill / Invoice No.</div><div class="v">${esc(p.billNo)}</div></div>
         <div class="kv"><div class="k">Total Amount Paid</div><div class="v">${fmtMoney(p.amountPaid)}</div></div>
         <div class="kv"><div class="k">Bill Copy Attached</div><div class="v">${p.billAttached ? "Yes" : "No"}</div></div>
         <div class="kv"><div class="k">Date</div><div class="v">${fmtDate(p.at)}</div></div>
       </div>
+      ${p.billAttached && p.billPhoto ? `
+        <div style="margin-top:14px;">
+          <div class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-faint);margin-bottom:6px;">Bill Photo</div>
+          <img src="${p.billPhoto}" alt="Bill photo" style="max-width:220px;border:1px solid var(--line);border-radius:6px;cursor:pointer;" onclick="window.open(this.src, '_blank')">
+        </div>
+      ` : ""}
     `;
     return;
   }
@@ -718,6 +728,8 @@ function renderPurchaseCard(c) {
     return;
   }
 
+  draftBillPhoto = null;
+
   card.innerHTML = `
     <div class="grid-2">
       <div class="field"><label>Vendor / Shop Name</label><input id="pVendor" type="text"></div>
@@ -725,36 +737,130 @@ function renderPurchaseCard(c) {
       <div class="field"><label>Total Amount Paid (₹)</label><input id="pAmount" type="text"></div>
       <div class="field">
         <label>Bill Copy Attached</label>
-        <select id="pAttached"><option value="yes">Yes</option><option value="no">No</option></select>
+        <select id="pAttached">
+          <option value="" selected disabled>— Select —</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
       </div>
     </div>
-    <button class="btn btn-primary" id="completePurchaseBtn" style="margin-top:8px;">Mark as Purchased</button>
+
+    <div id="billPhotoSection" style="display:none;margin-top:6px;">
+      <label style="display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-soft);margin-bottom:8px;">Bill Photo</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button type="button" class="btn btn-ghost" id="takePhotoBtn">📷 Take Photo</button>
+        <button type="button" class="btn btn-ghost" id="choosePhotoBtn">🖼 Choose from Gallery</button>
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
+        <input type="file" id="galleryInput" accept="image/*" style="display:none;">
+      </div>
+      <div id="photoPreviewWrap" style="margin-top:10px;"></div>
+    </div>
+
+    <button class="btn btn-primary" id="completePurchaseBtn" style="margin-top:14px;">Mark as Purchased</button>
   `;
+
+  const attachedSelect = document.getElementById("pAttached");
+  const photoSection = document.getElementById("billPhotoSection");
+  attachedSelect.onchange = () => {
+    photoSection.style.display = attachedSelect.value === "yes" ? "block" : "none";
+  };
+
+  const handleFile = (file) => {
+    if (!file) return;
+    compressImageToDataUrl(file, 1000, 0.6).then(dataUrl => {
+      draftBillPhoto = dataUrl;
+      document.getElementById("photoPreviewWrap").innerHTML = `
+        <img src="${dataUrl}" style="max-width:180px;border:1px solid var(--line);border-radius:6px;display:block;margin-bottom:8px;">
+        <button type="button" class="btn btn-ghost" id="retakePhotoBtn">Remove &amp; retake</button>
+      `;
+      document.getElementById("retakePhotoBtn").onclick = () => {
+        draftBillPhoto = null;
+        document.getElementById("photoPreviewWrap").innerHTML = "";
+      };
+    }).catch(() => toast("Couldn't read that photo — please try again.", true));
+  };
+
+  document.getElementById("takePhotoBtn").onclick = () => document.getElementById("cameraInput").click();
+  document.getElementById("choosePhotoBtn").onclick = () => document.getElementById("galleryInput").click();
+  document.getElementById("cameraInput").onchange = (e) => handleFile(e.target.files[0]);
+  document.getElementById("galleryInput").onchange = (e) => handleFile(e.target.files[0]);
+
   document.getElementById("completePurchaseBtn").onclick = () => completePurchase(c.id);
+}
+
+function compressImageToDataUrl(file, maxDimension, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDimension) {
+          height = Math.round(height * (maxDimension / width));
+          width = maxDimension;
+        } else if (height > maxDimension) {
+          width = Math.round(width * (maxDimension / height));
+          height = maxDimension;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 async function completePurchase(challanId) {
   const vendor = document.getElementById("pVendor").value.trim();
   const billNo = document.getElementById("pBillNo").value.trim();
   const amountPaid = document.getElementById("pAmount").value.trim();
-  const billAttached = document.getElementById("pAttached").value === "yes";
+  const attachedValue = document.getElementById("pAttached").value;
 
   if (!vendor) return toast("Please enter the vendor/shop name.", true);
+  if (attachedValue !== "yes" && attachedValue !== "no") return toast("Please select Yes or No for Bill Copy Attached.", true);
+
+  const billAttached = attachedValue === "yes";
+
+  if (billAttached && !draftBillPhoto) {
+    return toast("Please take or choose a bill photo, or switch Bill Copy Attached to No.", true);
+  }
+  if (!billAttached) {
+    const proceed = confirm("You're submitting without a bill copy attached. Continue?");
+    if (!proceed) return;
+  }
+
+  const btn = document.getElementById("completePurchaseBtn");
+  btn.disabled = true; btn.textContent = "Saving…";
 
   try {
+    const purchaseRecord = {
+      purchasedByName: currentUser.name,
+      purchasedByUsername: currentUser.username || "",
+      purchasedByUid: currentUser.uid,
+      vendor, billNo, amountPaid, billAttached,
+      at: Timestamp.now()
+    };
+    if (billAttached && draftBillPhoto) purchaseRecord.billPhoto = draftBillPhoto;
+
     await updateDoc(doc(db, "challans", challanId), {
-      purchase: {
-        purchasedByName: currentUser.name,
-        purchasedByUid: currentUser.uid,
-        vendor, billNo, amountPaid, billAttached,
-        at: Timestamp.now()
-      },
+      purchase: purchaseRecord,
       status: "purchased"
     });
+    draftBillPhoto = null;
     toast("Purchase recorded.");
   } catch (e) {
     console.error(e);
-    toast("Couldn't save — please try again.", true);
+    const msg = (e.code || "").includes("invalid-argument") || (e.message || "").includes("longer than")
+      ? "That photo is too large to save — please retake it (it will be compressed automatically) or try a smaller image."
+      : "Couldn't save — please try again.";
+    toast(msg, true);
+    btn.disabled = false; btn.textContent = "Mark as Purchased";
   }
 }
 
@@ -804,6 +910,12 @@ function renderPrintable(c) {
           <td><b>Total Amount Paid</b></td><td>${c.purchase ? fmtMoney(c.purchase.amountPaid) : ""}</td></tr>
       <tr><td><b>Bill Copy Attached</b></td><td colspan="3">${c.purchase ? (c.purchase.billAttached ? "Yes" : "No") : ""}</td></tr>
     </table>
+    ${c.purchase && c.purchase.billAttached && c.purchase.billPhoto ? `
+      <div style="margin-top:6px;">
+        <b style="font-size:10.5px;">Bill Photo:</b><br>
+        <img src="${c.purchase.billPhoto}" style="max-width:100mm;max-height:60mm;margin-top:3px;border:1px solid #333;">
+      </div>
+    ` : ""}
 
     <p style="font-size:11px;color:#555;">Note: No purchase without Manager approval. Bill copy must be attached before filing.<br>
     <span class="hi-inline">नोट: मैनेजर की स्वीकृति के बिना कोई क्रय न करें। फाइल करने से पहले बिल कॉपी अवश्य लगाएं।</span></p>
@@ -1143,3 +1255,5 @@ function drawItemMasterRows() {
     btn.onclick = async () => { await deleteDoc(doc(db, "itemMaster", btn.dataset.id)); toast("Item removed."); };
   });
 }
+
+
