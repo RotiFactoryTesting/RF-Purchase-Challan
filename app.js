@@ -4,7 +4,7 @@
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc,
@@ -112,11 +112,21 @@ function stopListeners() {
   if (unsubItems) unsubItems();
 }
 
+async function resolveLoginEmail(usernameOrEmail) {
+  const input = usernameOrEmail.trim();
+  if (input.includes("@")) return input; // typed a full email directly (covers your original admin login)
+  // Otherwise treat it as a username and look up its registered email
+  // in the public, read-only "usernames" lookup collection.
+  const lookup = await getDoc(doc(db, "usernames", input.toLowerCase()));
+  if (lookup.exists()) return lookup.data().email;
+  // Fall back to the old hidden-domain scheme, for any account created
+  // before real emails became mandatory.
+  return input.toLowerCase() + "@" + FAKE_EMAIL_DOMAIN;
+}
+
 async function login(usernameOrEmail, password) {
-  const resolvedEmail = usernameOrEmail.includes("@")
-    ? usernameOrEmail.trim()
-    : usernameOrEmail.trim().toLowerCase() + "@" + FAKE_EMAIL_DOMAIN;
   try {
+    const resolvedEmail = await resolveLoginEmail(usernameOrEmail);
     await signInWithEmailAndPassword(auth, resolvedEmail, password);
   } catch (e) {
     throw new Error(friendlyAuthError(e));
@@ -130,16 +140,30 @@ function friendlyAuthError(e) {
   return "Couldn't sign in — check your connection and try again.";
 }
 
+async function requestPasswordReset(usernameOrEmail) {
+  const resolvedEmail = await resolveLoginEmail(usernameOrEmail);
+  try {
+    await sendPasswordResetEmail(auth, resolvedEmail);
+  } catch (e) {
+    // Don't reveal whether the username/account exists — fail quietly for
+    // "not found" style errors, but still surface real connection problems.
+    if (!(e.code || "").includes("user-not-found")) throw e;
+  }
+}
+
 // ---------- render: shell ----------
 function renderShell() {
   const role = currentUser.role;
+  if (currentView === "roles" && role !== "admin") currentView = "dashboard";
+  if ((currentView === "admin-users" || currentView === "admin-items") && role !== "admin") currentView = "dashboard";
+  if (currentView === "new" && role !== "staff" && role !== "admin") currentView = "dashboard";
   const tabs = [{ id: "dashboard", label: "Dashboard" }];
   if (role === "staff" || role === "admin") tabs.push({ id: "new", label: "+ New Requisition" });
   if (role === "admin") {
     tabs.push({ id: "admin-users", label: "Manage Users" });
     tabs.push({ id: "admin-items", label: "Manage Items" });
+    tabs.push({ id: "roles", label: "Who Does What" });
   }
-  tabs.push({ id: "roles", label: "Who Does What" });
 
   $app.innerHTML = `
     <div class="topbar">
@@ -217,7 +241,8 @@ function renderRolesInfo() {
 }
 
 // ---------- render: login ----------
-function renderLogin() {
+function renderLogin(showForgot) {
+  if (showForgot) { renderForgotPassword(); return; }
   $app.innerHTML = `
     <div class="login-wrap">
       <div class="login-card">
@@ -238,6 +263,9 @@ function renderLogin() {
           </div>
           <button class="btn btn-primary btn-block" type="submit">Sign in</button>
         </form>
+        <div style="text-align:center;margin-top:12px;">
+          <button class="link" id="forgotBtn" style="background:none;border:none;color:var(--blue);cursor:pointer;text-decoration:underline;font-size:13px;">Forgot password?</button>
+        </div>
         <div class="hint-msg">Don't have an account? Ask your admin to add you from the Manage Users screen.</div>
       </div>
     </div>
@@ -253,6 +281,46 @@ function renderLogin() {
     } catch (err) {
       errEl.innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
     }
+  };
+  document.getElementById("forgotBtn").onclick = () => renderForgotPassword();
+}
+
+function renderForgotPassword() {
+  $app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="brand-block">
+          <div class="rf">RF FACTORY</div>
+          <div class="tag">Reset your password</div>
+        </div>
+        <div id="forgotMsg"></div>
+        <form id="forgotForm">
+          <div class="field">
+            <label for="fUsername">Username</label>
+            <input type="text" id="fUsername" autocomplete="username" required autocapitalize="none">
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+        </form>
+        <div style="text-align:center;margin-top:14px;">
+          <button class="link" id="backToLoginBtn" style="background:none;border:none;color:var(--blue);cursor:pointer;text-decoration:underline;font-size:13px;">← Back to sign in</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById("backToLoginBtn").onclick = () => renderLogin(false);
+  document.getElementById("forgotForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("fUsername").value.trim();
+    const msgEl = document.getElementById("forgotMsg");
+    const btn = e.target.querySelector("button[type=submit]");
+    btn.disabled = true; btn.textContent = "Sending…";
+    try {
+      await requestPasswordReset(username);
+    } catch (err) {
+      // swallow — we show the same generic message either way, see below
+    }
+    msgEl.innerHTML = `<div class="hint-msg" style="color:var(--green);margin-top:0;margin-bottom:14px;">If that username has a registered email, a reset link has been sent to it. Check the inbox (and spam folder), click the link, and set a new password.</div>`;
+    btn.disabled = false; btn.textContent = "Send reset link";
   };
 }
 
@@ -777,8 +845,12 @@ function drawAdminUsers(users) {
           </select>
         </div>
         <div class="field">
-          <label>Username</label>
+          <label>Username <span style="text-transform:none;font-weight:400;">(what they type to log in)</span></label>
           <input id="nuUsername" type="text" placeholder="e.g. ramesh (no spaces or @)" autocapitalize="none">
+        </div>
+        <div class="field">
+          <label>Email <span style="text-transform:none;font-weight:400;">(for password reset — must be unique)</span></label>
+          <input id="nuEmail" type="email" placeholder="e.g. yourteam+ramesh@gmail.com">
         </div>
         <div class="field"><label>Temporary Password</label><input id="nuPassword" type="text" placeholder="min. 6 characters"></div>
         <div class="field">
@@ -787,6 +859,9 @@ function drawAdminUsers(users) {
         </div>
       </div>
       <button class="btn btn-primary" id="addUserBtn">Add User</button>
+      <div style="font-size:12px;color:var(--ink-faint);margin-top:10px;">
+        Each login needs its own unique email. If everyone shares one inbox, use a "+" alias — e.g. yourteam+ramesh@gmail.com and yourteam+priya@gmail.com both land in yourteam@gmail.com.
+      </div>
     </div>
 
     <div class="card">
@@ -795,14 +870,21 @@ function drawAdminUsers(users) {
         <tbody>
           ${users.map(u => u.id === editingUserId ? `
             <tr data-uid="${u.id}">
-              <td>${esc(u.name)}</td>
-              <td>${esc(u.username || "—")}</td>
-              <td><span class="role-tag ${u.role}">${ROLE_LABEL[u.role] || u.role}</span></td>
-              <td><input type="text" class="edit-dept" value="${esc(u.department || "")}" style="width:140px;" placeholder="e.g. Kitchen"></td>
+              <td><input type="text" class="edit-name" value="${esc(u.name)}" style="width:120px;"></td>
+              <td><input type="text" class="edit-username" value="${esc(u.username || "")}" style="width:110px;" autocapitalize="none"></td>
+              <td>
+                <select class="edit-role">
+                  <option value="staff" ${u.role === "staff" ? "selected" : ""}>Staff</option>
+                  <option value="manager" ${u.role === "manager" ? "selected" : ""}>Manager</option>
+                  <option value="purchase" ${u.role === "purchase" ? "selected" : ""}>Accounts</option>
+                  <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
+                </select>
+              </td>
+              <td><input type="text" class="edit-dept" value="${esc(u.department || "")}" style="width:120px;" placeholder="e.g. Kitchen"></td>
               <td>${u.active === false ? "Disabled" : "Active"}</td>
               <td style="white-space:nowrap;">
-                <button class="btn btn-primary save-dept" data-uid="${u.id}">Save</button>
-                <button class="btn btn-ghost cancel-dept-edit">Cancel</button>
+                <button class="btn btn-primary save-user" data-uid="${u.id}">Save</button>
+                <button class="btn btn-ghost cancel-user-edit">Cancel</button>
               </td>
             </tr>
           ` : `
@@ -813,13 +895,17 @@ function drawAdminUsers(users) {
               <td>${esc(u.department || "—")}</td>
               <td>${u.active === false ? "Disabled" : "Active"}</td>
               <td style="white-space:nowrap;">
-                <button class="btn btn-ghost edit-dept-btn" data-uid="${u.id}">Edit Dept.</button>
+                <button class="btn btn-ghost edit-user-btn" data-uid="${u.id}">Edit</button>
                 <button class="btn btn-ghost toggle-active" data-uid="${u.id}" data-active="${u.active !== false}">${u.active === false ? "Enable" : "Disable"}</button>
+                <button class="btn btn-red delete-user-btn" data-uid="${u.id}" data-username="${esc(u.username || "")}" data-name="${esc(u.name)}">Delete</button>
               </td>
             </tr>
           `).join("")}
         </tbody>
       </table>
+      <div style="font-size:12px;color:var(--ink-faint);margin-top:10px;">
+        Deleting a user removes their login access completely — it never touches any requisition they raised, approved, or paid; that history stays exactly as it is.
+      </div>
     </div>
   `;
 
@@ -831,19 +917,57 @@ function drawAdminUsers(users) {
       toast(!isActive ? "User enabled." : "User disabled.");
     };
   });
-  main.querySelectorAll(".edit-dept-btn").forEach(btn => {
+  main.querySelectorAll(".edit-user-btn").forEach(btn => {
     btn.onclick = () => { editingUserId = btn.dataset.uid; drawAdminUsers(users); };
   });
-  main.querySelectorAll(".cancel-dept-edit").forEach(btn => {
+  main.querySelectorAll(".cancel-user-edit").forEach(btn => {
     btn.onclick = () => { editingUserId = null; drawAdminUsers(users); };
   });
-  main.querySelectorAll(".save-dept").forEach(btn => {
+  main.querySelectorAll(".save-user").forEach(btn => {
     btn.onclick = async () => {
       const tr = btn.closest("tr");
+      const uid = btn.dataset.uid;
+      const existing = users.find(u => u.id === uid);
+      const name = tr.querySelector(".edit-name").value.trim();
+      const newUsername = tr.querySelector(".edit-username").value.trim().toLowerCase();
+      const role = tr.querySelector(".edit-role").value;
       const department = tr.querySelector(".edit-dept").value.trim();
-      await updateDoc(doc(db, "users", btn.dataset.uid), { department });
-      editingUserId = null;
-      toast("Department updated.");
+
+      if (!name) return toast("Name can't be empty.", true);
+      if (!/^[a-z0-9._-]+$/.test(newUsername)) return toast("Username can only have letters, numbers, dots, underscores, or hyphens.", true);
+
+      btn.disabled = true; btn.textContent = "Saving…";
+      try {
+        const oldUsername = (existing.username || "").toLowerCase();
+        if (newUsername !== oldUsername) {
+          const clash = await getDoc(doc(db, "usernames", newUsername));
+          if (clash.exists()) { toast("That username is already taken.", true); btn.disabled = false; btn.textContent = "Save"; return; }
+          const oldLookup = oldUsername ? await getDoc(doc(db, "usernames", oldUsername)) : null;
+          const email = oldLookup && oldLookup.exists() ? oldLookup.data().email : (existing.email || "");
+          await setDoc(doc(db, "usernames", newUsername), { email, uid });
+          if (oldUsername) await deleteDoc(doc(db, "usernames", oldUsername));
+        }
+        await updateDoc(doc(db, "users", uid), { name, username: newUsername, role, department });
+        editingUserId = null;
+        toast("User updated.");
+      } catch (e) {
+        console.error(e);
+        toast("Couldn't save changes — please try again.", true);
+        btn.disabled = false; btn.textContent = "Save";
+      }
+    };
+  });
+  main.querySelectorAll(".delete-user-btn").forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`Remove ${btn.dataset.name}'s login access? Their past requisitions are kept exactly as they are.`)) return;
+      try {
+        await deleteDoc(doc(db, "users", btn.dataset.uid));
+        if (btn.dataset.username) await deleteDoc(doc(db, "usernames", btn.dataset.username)).catch(() => {});
+        toast("User removed.");
+      } catch (e) {
+        console.error(e);
+        toast("Couldn't remove user — please try again.", true);
+      }
     };
   });
 }
@@ -853,13 +977,14 @@ async function addNewUser() {
   const role = document.getElementById("nuRole").value;
   const usernameRaw = document.getElementById("nuUsername").value.trim();
   const username = usernameRaw.toLowerCase();
+  const email = document.getElementById("nuEmail").value.trim();
   const password = document.getElementById("nuPassword").value;
   const department = document.getElementById("nuDept").value.trim();
   const errEl = document.getElementById("addUserError");
   errEl.innerHTML = "";
 
-  if (!name || !username || password.length < 6) {
-    errEl.innerHTML = `<div class="error-msg">Fill in name, username, and a password of at least 6 characters.</div>`;
+  if (!name || !username || !email || password.length < 6) {
+    errEl.innerHTML = `<div class="error-msg">Fill in name, username, email, and a password of at least 6 characters.</div>`;
     return;
   }
   if (!/^[a-z0-9._-]+$/.test(username)) {
@@ -870,23 +995,34 @@ async function addNewUser() {
   const btn = document.getElementById("addUserBtn");
   btn.disabled = true; btn.textContent = "Adding…";
 
-  const syntheticEmail = username + "@" + FAKE_EMAIL_DOMAIN;
+  try {
+    const clash = await getDoc(doc(db, "usernames", username));
+    if (clash.exists()) {
+      errEl.innerHTML = `<div class="error-msg">That username is already taken.</div>`;
+      btn.disabled = false; btn.textContent = "Add User";
+      return;
+    }
+  } catch (e) { /* if this lookup fails, Firebase's own email/username checks below still protect us */ }
 
   // Use a secondary, isolated Firebase app instance so creating the new
   // account doesn't sign the current admin out of their own session.
   const secondary = initializeApp(firebaseConfig, "secondary-" + Date.now());
   const secondaryAuth = getAuth(secondary);
   try {
-    const cred = await createUserWithEmailAndPassword(secondaryAuth, syntheticEmail, password);
-    await setDoc(doc(db, "users", cred.user.uid), { name, username, role, department, active: true, createdAt: serverTimestamp() });
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    await setDoc(doc(db, "users", cred.user.uid), { name, username, email, role, department, active: true, createdAt: serverTimestamp() });
+    await setDoc(doc(db, "usernames", username), { email, uid: cred.user.uid });
     await signOut(secondaryAuth);
     toast(`${name} added as ${ROLE_LABEL[role]}.`);
     document.getElementById("nuName").value = "";
     document.getElementById("nuUsername").value = "";
+    document.getElementById("nuEmail").value = "";
     document.getElementById("nuPassword").value = "";
     document.getElementById("nuDept").value = "";
   } catch (e) {
-    const msg = e.code === "auth/email-already-in-use" ? "That username is already taken." : friendlyAuthError(e);
+    const msg = e.code === "auth/email-already-in-use"
+      ? "That email is already used by another login — try a '+' alias, e.g. yourteam+" + username + "@gmail.com."
+      : friendlyAuthError(e);
     errEl.innerHTML = `<div class="error-msg">${esc(msg)}</div>`;
   } finally {
     await deleteApp(secondary);
