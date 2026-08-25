@@ -845,5 +845,3 @@ function drawItemMasterRows() {
     btn.onclick = async () => { await deleteDoc(doc(db, "itemMaster", btn.dataset.id)); toast("Item removed."); };
   });
 }
-
-
