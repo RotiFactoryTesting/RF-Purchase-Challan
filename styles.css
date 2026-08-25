@@ -379,6 +379,7 @@ main {
 .stamp.approved { color: var(--green); background: var(--green-soft); }
 .stamp.rejected { color: var(--red); background: var(--red-soft); }
 .stamp.purchased{ color: var(--blue); background: var(--blue-soft); }
+.stamp.cancelled{ color: var(--ink-soft); background: #E7E4DA; }
 .stamp.large { font-size: 16px; padding: 8px 20px; transform: rotate(-4deg); }
 
 /* ---------- Detail view ---------- */

@@ -37,10 +37,15 @@ service cloud.firestore {
                         && resource.data.status == 'pending_approval'
                         && request.resource.data.status in ['approved', 'rejected'])
                       ||
-                      // Purchase staff completing an approved item
+                      // Purchase/Accounts staff completing an approved item
                       ((myRole() == 'purchase' || myRole() == 'admin')
                         && resource.data.status == 'approved'
                         && request.resource.data.status == 'purchased')
+                      ||
+                      // Manager or Admin cancelling a still-open item
+                      ((myRole() == 'manager' || myRole() == 'admin')
+                        && resource.data.status in ['pending_approval', 'approved']
+                        && request.resource.data.status == 'cancelled')
                     );
 
       allow delete: if isSignedIn() && myRole() == 'admin';

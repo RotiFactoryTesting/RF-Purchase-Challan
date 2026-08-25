@@ -17,19 +17,22 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const ROLE_LABEL = { admin: "Admin", staff: "Staff", manager: "Manager", purchase: "Purchase" };
+const ROLE_LABEL = { admin: "Admin", staff: "Staff", manager: "Manager", purchase: "Accounts" };
 const STATUS_LABEL = {
   pending_approval: "Pending Approval",
   approved: "Approved",
   rejected: "Rejected",
-  purchased: "Purchased"
+  purchased: "Purchased",
+  cancelled: "Cancelled"
 };
 const STATUS_STAMP_CLASS = {
   pending_approval: "pending",
   approved: "approved",
   rejected: "rejected",
-  purchased: "purchased"
+  purchased: "purchased",
+  cancelled: "cancelled"
 };
+const FAKE_EMAIL_DOMAIN = "rfchallan.local";
 
 let currentUser = null;      // { uid, name, email, role }
 let currentView = "dashboard";
@@ -80,7 +83,7 @@ onAuthStateChanged(auth, async (user) => {
       await signOut(auth);
       return;
     }
-    currentUser = { uid: user.uid, email: user.email, name: profile.name, role: profile.role };
+    currentUser = { uid: user.uid, email: user.email, name: profile.name, role: profile.role, department: profile.department || "" };
     currentView = "dashboard";
     startListeners();
     renderShell();
@@ -109,18 +112,21 @@ function stopListeners() {
   if (unsubItems) unsubItems();
 }
 
-async function login(email, password) {
+async function login(usernameOrEmail, password) {
+  const resolvedEmail = usernameOrEmail.includes("@")
+    ? usernameOrEmail.trim()
+    : usernameOrEmail.trim().toLowerCase() + "@" + FAKE_EMAIL_DOMAIN;
   try {
-    await signInWithEmailAndPassword(auth, email, password);
+    await signInWithEmailAndPassword(auth, resolvedEmail, password);
   } catch (e) {
     throw new Error(friendlyAuthError(e));
   }
 }
 function friendlyAuthError(e) {
   const c = e.code || "";
-  if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found")) return "Incorrect email or password.";
+  if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found")) return "Incorrect username/email or password.";
   if (c.includes("too-many-requests")) return "Too many attempts. Try again in a bit.";
-  if (c.includes("invalid-email")) return "That doesn't look like a valid email.";
+  if (c.includes("invalid-email")) return "That username has characters that aren't allowed (use only letters, numbers, dots).";
   return "Couldn't sign in — check your connection and try again.";
 }
 
@@ -133,6 +139,7 @@ function renderShell() {
     tabs.push({ id: "admin-users", label: "Manage Users" });
     tabs.push({ id: "admin-items", label: "Manage Items" });
   }
+  tabs.push({ id: "roles", label: "Who Does What" });
 
   $app.innerHTML = `
     <div class="topbar">
@@ -162,6 +169,51 @@ function renderShell() {
   else if (currentView === "detail") renderDetail();
   else if (currentView === "admin-users") renderAdminUsers();
   else if (currentView === "admin-items") renderAdminItems();
+  else if (currentView === "roles") renderRolesInfo();
+}
+
+// ---------- render: roles info ----------
+function renderRolesInfo() {
+  const main = document.getElementById("mainArea");
+  if (!main) return;
+  const roleRows = [
+    { title: "Staff", tag: "staff", points: [
+      "Raises a new requisition (fills Department, items, quantities, purpose).",
+      "Can view any requisition and its status.",
+      "Cannot approve, reject, cancel, or record a purchase/payment."
+    ]},
+    { title: "Manager", tag: "manager", points: [
+      "Reviews requisitions raised by staff.",
+      "Approves or Rejects each one, with an optional note.",
+      "Can Cancel a requisition at any point before it's purchased.",
+      "Does not record vendor or payment details."
+    ]},
+    { title: "Accounts", tag: "purchase", points: [
+      "Sees requisitions once a Manager has approved them.",
+      "Records the vendor/shop, bill number, and amount paid.",
+      "Marks the requisition as Purchased once payment is done.",
+      "Cannot approve, reject, or cancel a requisition."
+    ]},
+    { title: "Admin", tag: "admin", points: [
+      "Adds and manages every user account and their role.",
+      "Maintains the item list and reference prices.",
+      "Can do anything Staff, Manager, or Accounts can do.",
+      "The only role that can disable a user's login."
+    ]}
+  ];
+  main.innerHTML = `
+    <div class="section-head"><h2>Who Does What</h2></div>
+    ${roleRows.map(r => `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span class="role-tag ${r.tag}" style="font-size:12px;">${r.title}</span>
+        </div>
+        <ul style="margin:0;padding-left:20px;color:var(--ink);font-size:14px;line-height:1.7;">
+          ${r.points.map(p => `<li>${esc(p)}</li>`).join("")}
+        </ul>
+      </div>
+    `).join("")}
+  `;
 }
 
 // ---------- render: login ----------
@@ -177,8 +229,8 @@ function renderLogin() {
         <div id="loginError"></div>
         <form id="loginForm">
           <div class="field">
-            <label for="email">Email</label>
-            <input type="email" id="email" autocomplete="username" required>
+            <label for="username">Username</label>
+            <input type="text" id="username" autocomplete="username" required autocapitalize="none" placeholder="or your full email">
           </div>
           <div class="field">
             <label for="password">Password</label>
@@ -192,12 +244,12 @@ function renderLogin() {
   `;
   document.getElementById("loginForm").onsubmit = async (e) => {
     e.preventDefault();
-    const email = document.getElementById("email").value.trim();
+    const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value;
     const errEl = document.getElementById("loginError");
     errEl.innerHTML = "";
     try {
-      await login(email, password);
+      await login(username, password);
     } catch (err) {
       errEl.innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
     }
@@ -214,7 +266,8 @@ function renderDashboard() {
     { id: "pending_approval", label: "Pending Approval" },
     { id: "approved", label: "Approved" },
     { id: "purchased", label: "Purchased" },
-    { id: "rejected", label: "Rejected" }
+    { id: "rejected", label: "Rejected" },
+    { id: "cancelled", label: "Cancelled" }
   ];
 
   const filtered = currentFilter === "all" ? allChallans : allChallans.filter(c => c.status === currentFilter);
@@ -257,7 +310,9 @@ let draftItems = [];
 function renderNewChallan() {
   const main = document.getElementById("mainArea");
   if (!main) return;
-  if (draftItems.length === 0) draftItems = [{ key: uid4(), itemId: "", customName: "", qty: "", price: "", purpose: "" }];
+  if (draftItems.length === 0) draftItems = [{ key: uid4(), itemId: "", customName: "", qty: "", price: "", unitRefPrice: null, purpose: "" }];
+
+  const hasDept = !!(currentUser.department && currentUser.department.trim());
 
   main.innerHTML = `
     <div class="section-head"><span class="num">01</span><h2>Requisition Details</h2><span class="hi">अनुरोध विवरण</span></div>
@@ -265,11 +320,14 @@ function renderNewChallan() {
       <div class="grid-2">
         <div class="field">
           <label>Department</label>
-          <input type="text" id="fDept" placeholder="e.g. Kitchen, Packing, Maintenance">
+          ${hasDept
+            ? `<input type="text" id="fDept" value="${esc(currentUser.department)}" readonly style="background:var(--paper);color:var(--ink-soft);">`
+            : `<input type="text" id="fDept" value="" placeholder="No department set on your account — ask Admin">
+               <div style="font-size:12px;color:var(--red);margin-top:4px;">Your account has no department set. Ask Admin to add one in Manage Users, or type it manually for now.</div>`}
         </div>
         <div class="field">
           <label>Requested By</label>
-          <input type="text" id="fRequestedBy" value="${esc(currentUser.name)}">
+          <input type="text" id="fRequestedBy" value="${esc(currentUser.name)}" readonly style="background:var(--paper);color:var(--ink-soft);">
         </div>
       </div>
     </div>
@@ -278,7 +336,7 @@ function renderNewChallan() {
     <div class="card">
       <table class="items-table">
         <thead>
-          <tr><th>#</th><th>Item</th><th class="qty-col">Qty</th><th class="price-col">Est. Price ₹</th><th>Purpose</th><th class="rm-col"></th></tr>
+          <tr><th>#</th><th>Item</th><th class="qty-col">Qty</th><th class="price-col">Est. Price ₹ (total)</th><th>Purpose</th><th class="rm-col"></th></tr>
         </thead>
         <tbody id="itemsBody"></tbody>
       </table>
@@ -294,7 +352,7 @@ function renderNewChallan() {
   renderItemsBody();
 
   document.getElementById("addItemBtn").onclick = () => {
-    draftItems.push({ key: uid4(), itemId: "", customName: "", qty: "", price: "", purpose: "" });
+    draftItems.push({ key: uid4(), itemId: "", customName: "", qty: "", price: "", unitRefPrice: null, purpose: "" });
     renderItemsBody();
   };
   document.getElementById("cancelNewBtn").onclick = () => { draftItems = []; currentView = "dashboard"; renderShell(); };
@@ -331,23 +389,38 @@ function renderItemsBody() {
       const chosen = itemMasterList.find(m => m.id === sel.value);
       row.customName = chosen ? chosen.name : row.customName;
       custom.style.display = sel.value ? "none" : "block";
-      // Auto-fill the reference price when picking a known item — still
-      // just a starting point, the box stays editable for today's actual price.
-      if (chosen && chosen.refPrice !== undefined && chosen.refPrice !== "") {
-        row.price = String(chosen.refPrice);
-        tr.querySelector(".item-price").value = row.price;
+      // Cache this item's unit reference price on the row, then compute
+      // the line total (unit × qty). Still just a starting point — the
+      // Est. Price box stays editable for today's actual price.
+      if (chosen && chosen.refPrice !== undefined && chosen.refPrice !== "" && !isNaN(Number(chosen.refPrice))) {
+        row.unitRefPrice = Number(chosen.refPrice);
+        recalcLinePrice(row, tr);
+      } else {
+        row.unitRefPrice = null;
       }
     };
     custom.oninput = () => { row.customName = custom.value; };
-    tr.querySelector(".item-qty").oninput = (e) => { row.qty = e.target.value; };
+    tr.querySelector(".item-qty").oninput = (e) => {
+      row.qty = e.target.value;
+      recalcLinePrice(row, tr);
+    };
     tr.querySelector(".item-price").oninput = (e) => { row.price = e.target.value; };
     tr.querySelector(".item-purpose").oninput = (e) => { row.purpose = e.target.value; };
     tr.querySelector(".remove-item").onclick = () => {
       draftItems = draftItems.filter(d => d.key !== key);
-      if (draftItems.length === 0) draftItems.push({ key: uid4(), itemId: "", customName: "", qty: "", price: "", purpose: "" });
+      if (draftItems.length === 0) draftItems.push({ key: uid4(), itemId: "", customName: "", qty: "", price: "", unitRefPrice: null, purpose: "" });
       renderItemsBody();
     };
   });
+}
+
+function recalcLinePrice(row, tr) {
+  if (row.unitRefPrice === null || row.unitRefPrice === undefined) return;
+  const qtyNum = Number(row.qty);
+  if (row.qty === "" || isNaN(qtyNum)) return;
+  row.price = String(Math.round(row.unitRefPrice * qtyNum * 100) / 100);
+  const priceInput = tr.querySelector(".item-price");
+  if (priceInput) priceInput.value = row.price;
 }
 
 async function submitNewChallan() {
@@ -413,6 +486,9 @@ function renderDetail() {
     main.innerHTML = `<div class="empty-state"><div>Requisition not found.</div></div>`;
     return;
   }
+  const role = currentUser.role;
+  const canCancel = (role === "manager" || role === "admin") && (c.status === "pending_approval" || c.status === "approved");
+
   main.innerHTML = `
     <button class="btn btn-ghost" id="backBtn" style="margin-bottom:16px;">← Back to Dashboard</button>
 
@@ -446,11 +522,18 @@ function renderDetail() {
     <div class="card" id="approvalCard"></div>
 
     ${(c.status === "approved" || c.status === "purchased") ? `
-      <div class="section-head"><span class="num">04</span><h2>Purchase Completion</h2><span class="hi">क्रय पूर्णता</span></div>
+      <div class="section-head"><span class="num">04</span><h2>Accounts / Payment</h2><span class="hi">क्रय पूर्णता</span></div>
       <div class="card" id="purchaseCard"></div>
     ` : ""}
 
+    ${c.status === "cancelled" ? `
+      <div class="card" style="text-align:center;color:var(--ink-soft);">
+        Cancelled by ${esc(c.cancelledByName || "—")} on ${fmtDate(c.cancelledAt)}${c.cancelReason ? " — " + esc(c.cancelReason) : ""}
+      </div>
+    ` : ""}
+
     <div class="toolbar">
+      ${canCancel ? `<button class="btn btn-red" id="cancelReqBtn">Cancel Requisition</button>` : ""}
       <button class="btn btn-ghost" id="printBtn">🖨 Print / Download PDF</button>
     </div>
 
@@ -459,9 +542,27 @@ function renderDetail() {
 
   document.getElementById("backBtn").onclick = () => { currentView = "dashboard"; renderShell(); };
   document.getElementById("printBtn").onclick = () => { renderPrintable(c); window.print(); };
+  const cancelBtn = document.getElementById("cancelReqBtn");
+  if (cancelBtn) cancelBtn.onclick = () => cancelChallan(c.id);
 
   renderApprovalCard(c);
   if (c.status === "approved" || c.status === "purchased") renderPurchaseCard(c);
+}
+
+async function cancelChallan(challanId) {
+  if (!confirm("Cancel this requisition? This can't be undone.")) return;
+  try {
+    await updateDoc(doc(db, "challans", challanId), {
+      status: "cancelled",
+      cancelledByName: currentUser.name,
+      cancelledByUid: currentUser.uid,
+      cancelledAt: Timestamp.now()
+    });
+    toast("Requisition cancelled.");
+  } catch (e) {
+    console.error(e);
+    toast("Couldn't cancel — please try again.", true);
+  }
 }
 
 function renderApprovalCard(c) {
@@ -642,6 +743,8 @@ function renderPrintable(c) {
 }
 
 // ---------- admin: users ----------
+let editingUserId = null;
+
 function renderAdminUsers() {
   const main = document.getElementById("mainArea");
   if (!main) return;
@@ -669,27 +772,50 @@ function drawAdminUsers(users) {
           <select id="nuRole">
             <option value="staff">Staff</option>
             <option value="manager">Manager</option>
-            <option value="purchase">Purchase</option>
+            <option value="purchase">Accounts</option>
             <option value="admin">Admin</option>
           </select>
         </div>
-        <div class="field"><label>Email</label><input id="nuEmail" type="email"></div>
+        <div class="field">
+          <label>Username</label>
+          <input id="nuUsername" type="text" placeholder="e.g. ramesh (no spaces or @)" autocapitalize="none">
+        </div>
         <div class="field"><label>Temporary Password</label><input id="nuPassword" type="text" placeholder="min. 6 characters"></div>
+        <div class="field">
+          <label>Department <span style="text-transform:none;font-weight:400;">(for Staff/Admin raising requisitions)</span></label>
+          <input id="nuDept" type="text" placeholder="e.g. Kitchen, Packing, Maintenance">
+        </div>
       </div>
       <button class="btn btn-primary" id="addUserBtn">Add User</button>
     </div>
 
     <div class="card">
       <table class="admin-table">
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Department</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          ${users.map(u => `
+          ${users.map(u => u.id === editingUserId ? `
             <tr data-uid="${u.id}">
               <td>${esc(u.name)}</td>
-              <td>${esc(u.email)}</td>
+              <td>${esc(u.username || "—")}</td>
               <td><span class="role-tag ${u.role}">${ROLE_LABEL[u.role] || u.role}</span></td>
+              <td><input type="text" class="edit-dept" value="${esc(u.department || "")}" style="width:140px;" placeholder="e.g. Kitchen"></td>
               <td>${u.active === false ? "Disabled" : "Active"}</td>
-              <td><button class="btn btn-ghost toggle-active" data-uid="${u.id}" data-active="${u.active !== false}">${u.active === false ? "Enable" : "Disable"}</button></td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn-primary save-dept" data-uid="${u.id}">Save</button>
+                <button class="btn btn-ghost cancel-dept-edit">Cancel</button>
+              </td>
+            </tr>
+          ` : `
+            <tr data-uid="${u.id}">
+              <td>${esc(u.name)}</td>
+              <td>${esc(u.username || "—")}</td>
+              <td><span class="role-tag ${u.role}">${ROLE_LABEL[u.role] || u.role}</span></td>
+              <td>${esc(u.department || "—")}</td>
+              <td>${u.active === false ? "Disabled" : "Active"}</td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn-ghost edit-dept-btn" data-uid="${u.id}">Edit Dept.</button>
+                <button class="btn btn-ghost toggle-active" data-uid="${u.id}" data-active="${u.active !== false}">${u.active === false ? "Enable" : "Disable"}</button>
+              </td>
             </tr>
           `).join("")}
         </tbody>
@@ -705,38 +831,63 @@ function drawAdminUsers(users) {
       toast(!isActive ? "User enabled." : "User disabled.");
     };
   });
+  main.querySelectorAll(".edit-dept-btn").forEach(btn => {
+    btn.onclick = () => { editingUserId = btn.dataset.uid; drawAdminUsers(users); };
+  });
+  main.querySelectorAll(".cancel-dept-edit").forEach(btn => {
+    btn.onclick = () => { editingUserId = null; drawAdminUsers(users); };
+  });
+  main.querySelectorAll(".save-dept").forEach(btn => {
+    btn.onclick = async () => {
+      const tr = btn.closest("tr");
+      const department = tr.querySelector(".edit-dept").value.trim();
+      await updateDoc(doc(db, "users", btn.dataset.uid), { department });
+      editingUserId = null;
+      toast("Department updated.");
+    };
+  });
 }
 
 async function addNewUser() {
   const name = document.getElementById("nuName").value.trim();
   const role = document.getElementById("nuRole").value;
-  const email = document.getElementById("nuEmail").value.trim();
+  const usernameRaw = document.getElementById("nuUsername").value.trim();
+  const username = usernameRaw.toLowerCase();
   const password = document.getElementById("nuPassword").value;
+  const department = document.getElementById("nuDept").value.trim();
   const errEl = document.getElementById("addUserError");
   errEl.innerHTML = "";
 
-  if (!name || !email || password.length < 6) {
-    errEl.innerHTML = `<div class="error-msg">Fill in name, email, and a password of at least 6 characters.</div>`;
+  if (!name || !username || password.length < 6) {
+    errEl.innerHTML = `<div class="error-msg">Fill in name, username, and a password of at least 6 characters.</div>`;
+    return;
+  }
+  if (!/^[a-z0-9._-]+$/.test(username)) {
+    errEl.innerHTML = `<div class="error-msg">Username can only have letters, numbers, dots, underscores, or hyphens — no spaces or @.</div>`;
     return;
   }
 
   const btn = document.getElementById("addUserBtn");
   btn.disabled = true; btn.textContent = "Adding…";
 
+  const syntheticEmail = username + "@" + FAKE_EMAIL_DOMAIN;
+
   // Use a secondary, isolated Firebase app instance so creating the new
   // account doesn't sign the current admin out of their own session.
   const secondary = initializeApp(firebaseConfig, "secondary-" + Date.now());
   const secondaryAuth = getAuth(secondary);
   try {
-    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-    await setDoc(doc(db, "users", cred.user.uid), { name, email, role, active: true, createdAt: serverTimestamp() });
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, syntheticEmail, password);
+    await setDoc(doc(db, "users", cred.user.uid), { name, username, role, department, active: true, createdAt: serverTimestamp() });
     await signOut(secondaryAuth);
     toast(`${name} added as ${ROLE_LABEL[role]}.`);
     document.getElementById("nuName").value = "";
-    document.getElementById("nuEmail").value = "";
+    document.getElementById("nuUsername").value = "";
     document.getElementById("nuPassword").value = "";
+    document.getElementById("nuDept").value = "";
   } catch (e) {
-    errEl.innerHTML = `<div class="error-msg">${esc(friendlyAuthError(e) === "Couldn't sign in — check your connection and try again." ? (e.code === "auth/email-already-in-use" ? "That email is already in use." : "Couldn't add user — please try again.") : friendlyAuthError(e))}</div>`;
+    const msg = e.code === "auth/email-already-in-use" ? "That username is already taken." : friendlyAuthError(e);
+    errEl.innerHTML = `<div class="error-msg">${esc(msg)}</div>`;
   } finally {
     await deleteApp(secondary);
     btn.disabled = false; btn.textContent = "Add User";
@@ -845,3 +996,5 @@ function drawItemMasterRows() {
     btn.onclick = async () => { await deleteDoc(doc(db, "itemMaster", btn.dataset.id)); toast("Item removed."); };
   });
 }
+
+
