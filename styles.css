@@ -461,6 +461,7 @@ main {
 /* ---------- Print / PDF layout: mirrors the original paper challan ---------- */
 .print-only { display: none; }
 @media print {
+  @page { size: A5 portrait; margin: 8mm; }
   body * { visibility: hidden; }
   .print-only, .print-only * { visibility: visible; }
   .print-only {
@@ -468,16 +469,18 @@ main {
     position: absolute;
     top: 0; left: 0;
     width: 100%;
-    padding: 10mm;
+    padding: 0;
     font-family: 'Inter', sans-serif;
     color: #000;
+    font-size: 11px;
   }
-  .print-only .p-header { text-align: center; margin-bottom: 10px; }
-  .print-only .p-header .rf { font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; }
-  .print-only .p-header .title { font-size: 15px; font-weight: 700; margin-top: 2px; }
-  .print-only .p-header .hi { font-family: 'Noto Sans Devanagari', sans-serif; font-size: 13px; }
-  .print-only table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-  .print-only th, .print-only td { border: 1px solid #333; padding: 5px 7px; font-size: 12px; text-align: left; }
-  .print-only .p-section-title { font-weight: 700; font-size: 13px; margin: 10px 0 4px; }
-  .print-only .hi-inline { font-family: 'Noto Sans Devanagari', sans-serif; font-size: 11px; color: #444; }
+  .print-only .p-header { text-align: center; margin-bottom: 6px; }
+  .print-only .p-header .rf { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 700; }
+  .print-only .p-header .title { font-size: 12px; font-weight: 700; margin-top: 1px; }
+  .print-only .p-header .hi { font-family: 'Noto Sans Devanagari', sans-serif; font-size: 10px; }
+  .print-only table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+  .print-only th, .print-only td { border: 1px solid #333; padding: 3px 5px; font-size: 9.5px; text-align: left; line-height: 1.3; }
+  .print-only .p-section-title { font-weight: 700; font-size: 10.5px; margin: 6px 0 3px; }
+  .print-only .hi-inline { font-family: 'Noto Sans Devanagari', sans-serif; font-size: 8.5px; color: #444; }
+  .print-only p { font-size: 8.5px; margin: 6px 0 0; }
 }
