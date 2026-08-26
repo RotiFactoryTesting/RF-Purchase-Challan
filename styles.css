@@ -113,6 +113,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   align-items: center;
   gap: 14px;
   font-size: 14px;
+  min-width: 0;
 }
 .topbar .who .role-chip {
   background: rgba(255,255,255,0.12);
@@ -284,13 +285,14 @@ main {
   box-shadow: var(--shadow);
   padding: 20px;
   margin-bottom: 18px;
+  overflow-x: auto;
 }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
 
 /* ---------- Items table ---------- */
-.items-table { width: 100%; border-collapse: collapse; }
+.items-table { width: 100%; min-width: 620px; border-collapse: collapse; }
 .items-table th {
   text-align: left;
   font-size: 11px;
@@ -422,7 +424,7 @@ main {
 .toolbar { display: flex; gap: 10px; justify-content: flex-end; margin: 18px 0; flex-wrap: wrap; }
 
 /* ---------- Admin ---------- */
-.admin-table { width: 100%; border-collapse: collapse; }
+.admin-table { width: 100%; min-width: 720px; border-collapse: collapse; }
 .admin-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--ink-soft); padding: 8px; border-bottom: 2px solid var(--line-strong); }
 .admin-table td { padding: 10px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
 .role-tag {
@@ -465,6 +467,38 @@ main {
   margin: 40px auto;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 640px) {
+  .topbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .topbar .brand { min-width: 0; }
+  .topbar .brand-logo { max-width: 130px; }
+  .topbar .brand .sub { font-size: 10px; }
+  .topbar .who {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .tabs { padding: 0 10px; }
+  .tabs button { padding: 10px 12px; font-size: 13px; }
+  main { padding: 20px 12px 40px; }
+  .card { padding: 14px; }
+  .section-head { gap: 7px; flex-wrap: wrap; }
+  .section-head h2 { font-size: 18px; }
+  .section-head .hi { font-size: 12px; }
+  .detail-header .title-block { min-width: 0; width: 100%; }
+  .detail-header .title-block .challan-no { font-size: 22px; }
+  .detail-header .title-block .meta { line-height: 1.5; overflow-wrap: anywhere; }
+  .toolbar { justify-content: stretch; }
+  .toolbar .btn { flex: 1 1 100%; }
+  .approval-actions .btn { flex: 1 1 120px; }
+  .login-card { padding: 28px 20px; }
+}
 
 /* ---------- Print / PDF layout: mirrors the original paper challan ---------- */
 .print-only { display: none; }

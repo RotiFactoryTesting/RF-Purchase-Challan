@@ -28,7 +28,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && isActive();
 
       allow create: if isSignedIn() && isActive()
-                    && (myRole() == 'staff' || myRole() == 'admin')
+                    && (myRole() in ['staff', 'manager', 'purchase', 'admin'])
                     && request.resource.data.status == 'pending_approval';
 
       allow update: if isSignedIn() && isActive() && (
@@ -54,7 +54,7 @@ service cloud.firestore {
     // Sequential challan-number counter, advanced by transaction.
     match /counters/{id} {
       allow read: if isSignedIn() && isActive();
-      allow write: if isSignedIn() && isActive() && (myRole() == 'staff' || myRole() == 'admin');
+      allow write: if isSignedIn() && isActive() && (myRole() in ['staff', 'manager', 'purchase', 'admin']);
     }
 
     // Item master (dropdown list) — anyone signed in can read;

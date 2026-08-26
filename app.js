@@ -18,6 +18,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const ROLE_LABEL = { admin: "Admin", staff: "Staff", manager: "Manager", purchase: "Accounts" };
+const SUPERADMIN_USERNAME = "superadmin";
+const SUPERADMIN_EMAIL = "superadmin@rfchallan.local";
 const STATUS_LABEL = {
   pending_approval: "Pending Approval",
   approved: "Approved",
@@ -115,6 +117,7 @@ function stopListeners() {
 async function resolveLoginEmail(usernameOrEmail) {
   const input = usernameOrEmail.trim();
   if (input.includes("@")) return input; // typed a full email directly (covers your original admin login)
+  if (input.toLowerCase() === SUPERADMIN_USERNAME) return SUPERADMIN_EMAIL;
   // Otherwise treat it as a username and look up its registered email
   // in the public, read-only "usernames" lookup collection.
   const lookup = await getDoc(doc(db, "usernames", input.toLowerCase()));
@@ -156,9 +159,9 @@ function renderShell() {
   const role = currentUser.role;
   if (currentView === "roles" && role !== "admin") currentView = "dashboard";
   if ((currentView === "admin-users" || currentView === "admin-items") && role !== "admin") currentView = "dashboard";
-  if (currentView === "new" && role !== "staff" && role !== "admin") currentView = "dashboard";
+  if (currentView === "new" && !canRaiseRequisition(role)) currentView = "dashboard";
   const tabs = [{ id: "dashboard", label: "Dashboard" }];
-  if (role === "staff" || role === "admin") tabs.push({ id: "new", label: "+ New Requisition" });
+  if (canRaiseRequisition(role)) tabs.push({ id: "new", label: "+ New Requisition" });
   if (role === "admin") {
     tabs.push({ id: "admin-users", label: "Manage Users" });
     tabs.push({ id: "admin-items", label: "Manage Items" });
@@ -196,6 +199,10 @@ function renderShell() {
   else if (currentView === "roles") renderRolesInfo();
 }
 
+function canRaiseRequisition(role) {
+  return role === "staff" || role === "manager" || role === "purchase" || role === "admin";
+}
+
 // ---------- render: roles info ----------
 function renderRolesInfo() {
   const main = document.getElementById("mainArea");
@@ -207,12 +214,13 @@ function renderRolesInfo() {
       "Cannot approve, reject, cancel, or record a purchase/payment."
     ]},
     { title: "Manager", tag: "manager", points: [
-      "Reviews requisitions raised by staff.",
+      "Raises requisitions and reviews all pending requisitions.",
       "Approves or Rejects each one, with an optional note.",
       "Can Cancel a requisition at any point before it's purchased.",
       "Does not record vendor or payment details."
     ]},
     { title: "Accounts", tag: "purchase", points: [
+      "Raises requisitions and sees approved requisitions.",
       "Sees requisitions once a Manager has approved them.",
       "Records the vendor/shop, bill number, and amount paid.",
       "Marks the requisition as Purchased once payment is done.",
@@ -221,8 +229,9 @@ function renderRolesInfo() {
     { title: "Admin", tag: "admin", points: [
       "Adds and manages every user account and their role.",
       "Maintains the item list and reference prices.",
-      "Can do anything Staff, Manager, or Accounts can do.",
-      "The only role that can disable a user's login."
+      "Can cancel requisitions and record purchases when needed.",
+      "Can perform every requisition, approval, cancellation, and purchase action.",
+      "The only role that can disable a user's login or send password reset links."
     ]}
   ];
   main.innerHTML = `
@@ -966,7 +975,7 @@ function drawAdminUsers(users) {
         </div>
         <div class="field"><label>Temporary Password</label><input id="nuPassword" type="text" placeholder="min. 6 characters"></div>
         <div class="field">
-          <label>Department <span style="text-transform:none;font-weight:400;">(for Staff/Admin raising requisitions)</span></label>
+          <label>Department <span style="text-transform:none;font-weight:400;">(for anyone raising requisitions)</span></label>
           <input id="nuDept" type="text" placeholder="e.g. Kitchen, Packing, Maintenance">
         </div>
       </div>
@@ -1008,6 +1017,7 @@ function drawAdminUsers(users) {
               <td>${u.active === false ? "Disabled" : "Active"}</td>
               <td style="white-space:nowrap;">
                 <button class="btn btn-ghost edit-user-btn" data-uid="${u.id}">Edit</button>
+                <button class="btn btn-ghost reset-user-btn" data-email="${esc(u.email || "")}" data-name="${esc(u.name)}">Reset password</button>
                 <button class="btn btn-ghost toggle-active" data-uid="${u.id}" data-active="${u.active !== false}">${u.active === false ? "Enable" : "Disable"}</button>
                 <button class="btn btn-red delete-user-btn" data-uid="${u.id}" data-username="${esc(u.username || "")}" data-name="${esc(u.name)}">Delete</button>
               </td>
@@ -1031,6 +1041,20 @@ function drawAdminUsers(users) {
   });
   main.querySelectorAll(".edit-user-btn").forEach(btn => {
     btn.onclick = () => { editingUserId = btn.dataset.uid; drawAdminUsers(users); };
+  });
+  main.querySelectorAll(".reset-user-btn").forEach(btn => {
+    btn.onclick = async () => {
+      const email = btn.dataset.email;
+      if (!email) return toast("This user has no reset email configured.", true);
+      if (!confirm(`Send a password reset link to ${btn.dataset.name}?`)) return;
+      try {
+        await sendPasswordResetEmail(auth, email);
+        toast("Password reset link sent.");
+      } catch (e) {
+        console.error(e);
+        toast("Couldn't send the reset link — please try again.", true);
+      }
+    };
   });
   main.querySelectorAll(".cancel-user-edit").forEach(btn => {
     btn.onclick = () => { editingUserId = null; drawAdminUsers(users); };

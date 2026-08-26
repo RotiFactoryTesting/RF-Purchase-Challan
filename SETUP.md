@@ -31,20 +31,25 @@ The app has no public sign-up — an Admin adds every user from inside the app.
 For the very first Admin, you create the account by hand once:
 
 1. In the Firebase console: **Authentication → Users → Add user**.
-   Enter your email and a password.
+   Create the bootstrap login with email `superadmin@rfchallan.local` and
+   temporary password `192006`.
 2. **Firestore Database → Start collection** → collection ID: `users`.
 3. For the Document ID, paste the **User UID** shown next to the user you just
    created in the Authentication tab.
 4. Add these fields to that document:
-   - `name` (string) — your name
-   - `email` (string) — same email you used
+   - `name` (string) — Superadmin
+   - `username` (string) — `superadmin`
+   - `email` (string) — `superadmin@rfchallan.local`
    - `role` (string) — `admin`
    - `active` (boolean) — `true`
 5. Save.
 
-You can now log into the app with that email/password, and use
+You can now log into the app with username `superadmin` and password `192006`, and use
 **Manage Users** inside the app to add everyone else (staff, managers,
 purchase people, and additional admins) — no more manual console work needed.
+
+The app sends password reset links from **Manage Users → Reset password**.
+Users can also use **Forgot password?** on the sign-in screen.
 
 ## 5. Add your regular items (optional but recommended)
 
@@ -70,9 +75,10 @@ Your app will be live at `https://<your-github-username>.github.io/<repo-name>/`
 
 ## How it works day to day
 
-- **Staff** raises a new requisition → gets an auto Challan No. (RF-1001, RF-1002…) →
+- **Staff, Manager, or Accounts** raises a new requisition → gets an auto Challan No. (RF-1001, RF-1002…) →
   status starts as **Pending Approval**.
 - **Manager** opens it from the dashboard, reviews items, and Approves or Rejects.
+   **Superadmin** has the same approval power plus every other action in the app.
 - Once **Approved**, it's visible to **Purchase** staff, who fill in vendor,
   bill number, and amount paid, and mark it **Purchased**.
 - Anyone can open a requisition at any stage and hit **Print / Download PDF**
@@ -83,9 +89,7 @@ Your app will be live at `https://<your-github-username>.github.io/<repo-name>/`
 
 ## Notes
 
-- The **Manage Users** admin screen creates real login accounts — give people
-  their email + temporary password and ask them to keep it safe. There's no
-  "forgot password" flow built in yet; if someone's locked out, reset their
-  password from Firebase console → Authentication → Users.
+- The **Manage Users** admin screen creates real login accounts. The admin can
+   send a password reset link from each user's row.
 - Firebase's free (Spark) tier comfortably covers a single small factory's
   daily use of this app — same as RF Forms.
