@@ -498,6 +498,40 @@ main {
   .toolbar .btn { flex: 1 1 100%; }
   .approval-actions .btn { flex: 1 1 120px; }
   .login-card { padding: 28px 20px; }
+
+  .items-table {
+    min-width: 0;
+    display: block;
+  }
+  .items-table thead { display: none; }
+  .items-table tbody,
+  .items-table tr {
+    display: block;
+    width: 100%;
+  }
+  .items-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 12px;
+    padding: 12px 0;
+  }
+  .items-table tr + tr { border-top: 2px solid var(--line); }
+  .items-table td {
+    display: block;
+    width: auto;
+    padding: 0;
+    border-bottom: none;
+    min-width: 0;
+  }
+  .items-table td:nth-child(2),
+  .items-table td:nth-child(5) { grid-column: 1 / -1; }
+  .items-table td.srno { display: none; }
+  .items-table td.rm-col {
+    grid-column: 1 / -1;
+    text-align: right;
+  }
+  .items-table input,
+  .items-table select { width: 100%; }
 }
 
 /* ---------- Print / PDF layout: mirrors the original paper challan ---------- */
