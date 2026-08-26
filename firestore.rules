@@ -64,6 +64,16 @@ service cloud.firestore {
       allow write: if isSignedIn() && myRole() == 'admin';
     }
 
+    // Preset requester names and departments used by the requisition form.
+    match /requesterMaster/{id} {
+      allow read: if isSignedIn() && isActive();
+      allow write: if isSignedIn() && myRole() == 'admin';
+    }
+    match /departmentMaster/{id} {
+      allow read: if isSignedIn() && isActive();
+      allow write: if isSignedIn() && myRole() == 'admin';
+    }
+
     // Username lookup is needed before sign-in, and is intentionally limited
     // to the email/uid mapping used by the login form.
     match /usernames/{username} {

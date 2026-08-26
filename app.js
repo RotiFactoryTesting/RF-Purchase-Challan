@@ -45,9 +45,13 @@ let currentView = "dashboard";
 let currentFilter = "all";
 let allChallans = [];
 let itemMasterList = [];
+let requesterMasterList = [];
+let departmentMasterList = [];
 let unsubChallans = null;
 let unsubUsers = null;
 let unsubItems = null;
+let unsubRequesters = null;
+let unsubDepartments = null;
 let selectedChallanId = null;
 
 const $app = document.getElementById("app");
@@ -107,6 +111,7 @@ function startListeners() {
     if (currentView === "detail") renderDetail();
   });
   if (currentView === "new" || currentView === "admin-items") startItemListener();
+  startMasterListeners();
 }
 function startItemListener() {
   if (unsubItems) return;
@@ -120,6 +125,30 @@ function stopListeners() {
   if (unsubChallans) unsubChallans();
   if (unsubUsers) unsubUsers();
   if (unsubItems) unsubItems();
+  if (unsubRequesters) unsubRequesters();
+  if (unsubDepartments) unsubDepartments();
+  unsubChallans = null;
+  unsubUsers = null;
+  unsubItems = null;
+  unsubRequesters = null;
+  unsubDepartments = null;
+}
+
+function startMasterListeners() {
+  if (!unsubRequesters) {
+    unsubRequesters = onSnapshot(collection(db, "requesterMaster"), (snap) => {
+      requesterMasterList = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (currentView === "new" || currentView === "admin-lists") renderShell();
+    });
+  }
+  if (!unsubDepartments) {
+    unsubDepartments = onSnapshot(collection(db, "departmentMaster"), (snap) => {
+      departmentMasterList = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (currentView === "new" || currentView === "admin-lists") renderShell();
+    });
+  }
 }
 
 async function resolveLoginEmail(usernameOrEmail) {
@@ -166,13 +195,14 @@ async function requestPasswordReset(usernameOrEmail) {
 function renderShell() {
   const role = currentUser.role;
   if (currentView === "roles" && role !== "admin") currentView = "dashboard";
-  if ((currentView === "admin-users" || currentView === "admin-items") && role !== "admin") currentView = "dashboard";
+  if ((currentView === "admin-users" || currentView === "admin-items" || currentView === "admin-lists") && role !== "admin") currentView = "dashboard";
   if (currentView === "new" && !canRaiseRequisition(role)) currentView = "dashboard";
   const tabs = [{ id: "dashboard", label: "Dashboard" }];
   if (canRaiseRequisition(role)) tabs.push({ id: "new", label: "+ New Requisition" });
   if (role === "admin") {
     tabs.push({ id: "admin-users", label: "Manage Users" });
     tabs.push({ id: "admin-items", label: "Manage Items" });
+    tabs.push({ id: "admin-lists", label: "Manage Requesters" });
     tabs.push({ id: "roles", label: "Who Does What" });
   }
 
@@ -208,6 +238,7 @@ function renderShell() {
   else if (currentView === "detail") renderDetail();
   else if (currentView === "admin-users") renderAdminUsers();
   else if (currentView === "admin-items") { startItemListener(); renderAdminItems(); }
+  else if (currentView === "admin-lists") renderAdminLists();
   else if (currentView === "roles") renderRolesInfo();
 }
 
@@ -401,7 +432,9 @@ function renderNewChallan() {
   if (!main) return;
   if (draftItems.length === 0) draftItems = [{ key: uid4(), itemId: "", customName: "", qty: "", price: "", unitRefPrice: null, purpose: "" }];
 
-  const hasDept = !!(currentUser.department && currentUser.department.trim());
+  const canChangeRequester = currentUser.role === "purchase" || currentUser.role === "admin";
+  const defaultRequester = requesterMasterList.find(r => r.name === currentUser.name);
+  const defaultDepartment = defaultRequester?.department || currentUser.department || departmentMasterList[0]?.name || "";
 
   main.innerHTML = `
     <div class="section-head"><span class="num">01</span><h2>Requisition Details</h2><span class="hi">अनुरोध विवरण</span></div>
@@ -409,14 +442,22 @@ function renderNewChallan() {
       <div class="grid-2">
         <div class="field">
           <label>Department</label>
-          ${hasDept
-            ? `<input type="text" id="fDept" value="${esc(currentUser.department)}" readonly style="background:var(--paper);color:var(--ink-soft);">`
-            : `<input type="text" id="fDept" value="" placeholder="No department set on your account — ask Admin">
-               <div style="font-size:12px;color:var(--red);margin-top:4px;">Your account has no department set. Ask Admin to add one in Manage Users, or type it manually for now.</div>`}
+          <select id="fDept" ${departmentMasterList.length === 0 ? "disabled" : ""}>
+            <option value="">— Select department —</option>
+            ${departmentMasterList.map(d => `<option value="${esc(d.name)}" ${d.name === defaultDepartment ? "selected" : ""}>${esc(d.name)}</option>`).join("")}
+          </select>
         </div>
         <div class="field">
           <label>Requested By</label>
-          <input type="text" id="fRequestedBy" value="${esc(currentUser.name)}" readonly style="background:var(--paper);color:var(--ink-soft);">
+          ${canChangeRequester
+            ? `<select id="fRequesterSelect">
+                <option value="">— Select requester —</option>
+                ${requesterMasterList.map(r => `<option value="${esc(r.id)}" ${r.name === currentUser.name ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
+                <option value="manual">Manual entry</option>
+              </select>
+              <input type="text" id="fRequestedBy" value="${esc(defaultRequester?.name || currentUser.name)}" placeholder="Requester name" style="margin-top:6px;">
+              <div style="font-size:12px;color:var(--ink-faint);margin-top:4px;">Choose a preset name or select Manual entry.</div>`
+            : `<input type="text" id="fRequestedBy" value="${esc(currentUser.name)}" readonly style="background:var(--paper);color:var(--ink-soft);">`}
         </div>
       </div>
     </div>
@@ -439,6 +480,28 @@ function renderNewChallan() {
   `;
 
   renderItemsBody();
+
+  const requesterSelect = document.getElementById("fRequesterSelect");
+  const requesterInput = document.getElementById("fRequestedBy");
+  if (requesterSelect) {
+    const selected = requesterMasterList.find(r => r.id === requesterSelect.value);
+    requesterInput.readOnly = requesterSelect.value !== "manual";
+    requesterInput.style.background = requesterSelect.value === "manual" ? "" : "var(--paper)";
+    requesterInput.style.color = requesterSelect.value === "manual" ? "" : "var(--ink-soft)";
+    requesterSelect.onchange = () => {
+      const requester = requesterMasterList.find(r => r.id === requesterSelect.value);
+      const manual = requesterSelect.value === "manual";
+      requesterInput.readOnly = !manual;
+      requesterInput.style.background = manual ? "" : "var(--paper)";
+      requesterInput.style.color = manual ? "" : "var(--ink-soft)";
+      if (requester) {
+        requesterInput.value = requester.name;
+        const dept = document.getElementById("fDept");
+        if (requester.department && dept) dept.value = requester.department;
+      }
+      if (manual) requesterInput.value = "";
+    };
+  }
 
   document.getElementById("addItemBtn").onclick = () => {
     draftItems.push({ key: uid4(), itemId: "", customName: "", qty: "", price: "", unitRefPrice: null, purpose: "" });
@@ -515,6 +578,8 @@ function recalcLinePrice(row, tr) {
 async function submitNewChallan() {
   const dept = document.getElementById("fDept").value.trim();
   const requestedByName = document.getElementById("fRequestedBy").value.trim();
+  const requesterSelect = document.getElementById("fRequesterSelect");
+  const requestedByMasterId = requesterSelect && requesterSelect.value !== "manual" ? requesterSelect.value : "";
   const items = draftItems
     .filter(it => (it.customName || "").trim())
     .map(it => ({
@@ -524,7 +589,9 @@ async function submitNewChallan() {
       purpose: it.purpose.trim()
     }));
 
-  if (!dept) return toast("Please enter a department.", true);
+  if (!dept) return toast("Please select a department.", true);
+  if (!requestedByName) return toast("Please select or enter a requester.", true);
+  if (requesterSelect && !requesterSelect.value) return toast("Please select a requester or choose Manual entry.", true);
   if (items.length === 0) return toast("Add at least one item.", true);
 
   const btn = document.getElementById("submitNewBtn");
@@ -537,6 +604,7 @@ async function submitNewChallan() {
       department: dept,
       requestedByName,
       requestedByUsername: currentUser.username || "",
+      requestedByMasterId,
       requestedByUid: currentUser.uid,
       items,
       status: "pending_approval",
@@ -988,7 +1056,10 @@ function drawAdminUsers(users) {
         <div class="field"><label>Temporary Password</label><input id="nuPassword" type="text" placeholder="min. 6 characters"></div>
         <div class="field">
           <label>Department <span style="text-transform:none;font-weight:400;">(for anyone raising requisitions)</span></label>
-          <input id="nuDept" type="text" placeholder="e.g. Kitchen, Packing, Maintenance">
+          <select id="nuDept">
+            <option value="">— No department —</option>
+            ${departmentMasterList.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join("")}
+          </select>
         </div>
       </div>
       <button class="btn btn-primary" id="addUserBtn">Add User</button>
@@ -1013,7 +1084,10 @@ function drawAdminUsers(users) {
                   <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
                 </select>
               </td>
-              <td><input type="text" class="edit-dept" value="${esc(u.department || "")}" style="width:120px;" placeholder="e.g. Kitchen"></td>
+              <td><select class="edit-dept" style="width:120px;">
+                <option value="">— None —</option>
+                ${departmentMasterList.map(d => `<option value="${esc(d.name)}" ${u.department === d.name ? "selected" : ""}>${esc(d.name)}</option>`).join("")}
+              </select></td>
               <td>${u.active === false ? "Disabled" : "Active"}</td>
               <td style="white-space:nowrap;">
                 <button class="btn btn-primary save-user" data-uid="${u.id}">Save</button>
@@ -1187,6 +1261,82 @@ async function addNewUser() {
     await deleteApp(secondary);
     btn.disabled = false; btn.textContent = "Add User";
   }
+}
+
+// ---------- admin: requester and department masters ----------
+function renderAdminLists() {
+  const main = document.getElementById("mainArea");
+  if (!main) return;
+  main.innerHTML = `
+    <div class="section-head"><h2>Manage Requesters and Departments</h2></div>
+    <div class="card">
+      <h3 style="margin-bottom:12px;">Add requester</h3>
+      <div class="grid-2">
+        <div class="field"><label>Requester name</label><input id="newRequesterName" type="text" placeholder="e.g. Ramesh Kumar"></div>
+        <div class="field"><label>Department</label>
+          <select id="newRequesterDept">
+            <option value="">— Select department —</option>
+            ${departmentMasterList.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="addRequesterBtn">Add Requester</button>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px;">Preset requesters</h3>
+      <table class="admin-table">
+        <thead><tr><th>Name</th><th>Department</th><th></th></tr></thead>
+        <tbody>
+          ${requesterMasterList.length === 0 ? `<tr><td colspan="3" style="color:var(--ink-faint);">No requesters yet.</td></tr>` : requesterMasterList.map(r => `
+            <tr><td>${esc(r.name)}</td><td>${esc(r.department || "—")}</td><td><button class="btn btn-red delete-requester" data-id="${r.id}">Delete</button></td></tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px;">Preset departments</h3>
+      <div class="toolbar">
+        <input id="newDepartmentName" type="text" placeholder="e.g. Kitchen">
+        <button class="btn btn-primary" id="addDepartmentBtn">Add Department</button>
+      </div>
+      <table class="admin-table">
+        <thead><tr><th>Department</th><th></th></tr></thead>
+        <tbody>
+          ${departmentMasterList.length === 0 ? `<tr><td colspan="2" style="color:var(--ink-faint);">No departments yet.</td></tr>` : departmentMasterList.map(d => `
+            <tr><td>${esc(d.name)}</td><td><button class="btn btn-red delete-department" data-id="${d.id}">Delete</button></td></tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById("addRequesterBtn").onclick = async () => {
+    const name = document.getElementById("newRequesterName").value.trim();
+    const department = document.getElementById("newRequesterDept").value;
+    if (!name || !department) return toast("Enter a requester name and department.", true);
+    await addDoc(collection(db, "requesterMaster"), { name, department });
+    toast("Requester added.");
+  };
+  document.getElementById("addDepartmentBtn").onclick = async () => {
+    const name = document.getElementById("newDepartmentName").value.trim();
+    if (!name) return toast("Enter a department name.", true);
+    await addDoc(collection(db, "departmentMaster"), { name });
+    toast("Department added.");
+  };
+  main.querySelectorAll(".delete-requester").forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm("Delete this preset requester? Existing requisitions will be kept.")) return;
+      await deleteDoc(doc(db, "requesterMaster", btn.dataset.id));
+      toast("Requester deleted.");
+    };
+  });
+  main.querySelectorAll(".delete-department").forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm("Delete this preset department? Existing requisitions will be kept.")) return;
+      await deleteDoc(doc(db, "departmentMaster", btn.dataset.id));
+      toast("Department deleted.");
+    };
+  });
 }
 
 // ---------- admin: item master ----------
