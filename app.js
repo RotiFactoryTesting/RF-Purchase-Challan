@@ -9,13 +9,17 @@ import {
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc,
   collection, query, orderBy, onSnapshot, runTransaction, serverTimestamp,
-  Timestamp
+  Timestamp, enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+enableIndexedDbPersistence(db).catch(() => {
+  // Persistence is an optional speed improvement; private browsing and some
+  // mobile browsers may not support it.
+});
 
 const ROLE_LABEL = { admin: "Admin", staff: "Staff", manager: "Manager", purchase: "Accounts" };
 const SUPERADMIN_USERNAME = "superadmin";
@@ -102,6 +106,10 @@ function startListeners() {
     if (currentView === "dashboard") renderDashboard();
     if (currentView === "detail") renderDetail();
   });
+  if (currentView === "new" || currentView === "admin-items") startItemListener();
+}
+function startItemListener() {
+  if (unsubItems) return;
   unsubItems = onSnapshot(collection(db, "itemMaster"), (snap) => {
     itemMasterList = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
     if (currentView === "new") renderNewChallan();
@@ -188,14 +196,18 @@ function renderShell() {
 
   document.getElementById("logoutBtn").onclick = () => signOut(auth);
   document.getElementById("tabsRow").querySelectorAll("button").forEach(btn => {
-    btn.onclick = () => { currentView = btn.dataset.view; renderShell(); };
+    btn.onclick = () => {
+      currentView = btn.dataset.view;
+      if (currentView === "new" || currentView === "admin-items") startItemListener();
+      renderShell();
+    };
   });
 
   if (currentView === "dashboard") renderDashboard();
-  else if (currentView === "new") renderNewChallan();
+  else if (currentView === "new") { startItemListener(); renderNewChallan(); }
   else if (currentView === "detail") renderDetail();
   else if (currentView === "admin-users") renderAdminUsers();
-  else if (currentView === "admin-items") renderAdminItems();
+  else if (currentView === "admin-items") { startItemListener(); renderAdminItems(); }
   else if (currentView === "roles") renderRolesInfo();
 }
 
