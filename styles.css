@@ -548,13 +548,71 @@ main {
 
 /* ---------- Print / PDF layout: mirrors the original paper challan ---------- */
 .print-only { display: none; }
+.bill-photo-button {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.bill-photo-button img {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.bill-photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px 16px;
+  background: rgba(0, 0, 0, 0.88);
+  overflow: auto;
+}
+.bill-photo-viewer img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: zoom-in;
+}
+.bill-photo-viewer img.zoomed {
+  max-width: none;
+  max-height: none;
+  width: auto;
+  height: auto;
+  cursor: zoom-out;
+}
+.bill-photo-close {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255,255,255,.6);
+  border-radius: 50%;
+  background: rgba(0,0,0,.45);
+  color: #fff;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
 @media print {
   @page { size: A5 portrait; margin: 8mm; }
-  body * { visibility: hidden; }
+  body > *:not(#app) { display: none !important; }
+  #app > .topbar,
+  #app > .tabs,
+  #mainArea > *:not(.print-only) { display: none !important; }
+  #mainArea { max-width: none; padding: 0 !important; }
+  #app { min-height: 0 !important; }
   .print-only, .print-only * { visibility: visible; }
   .print-only {
     display: block;
-    position: absolute;
+    position: relative;
     top: 0; left: 0;
     width: 100%;
     padding: 0;
@@ -562,6 +620,7 @@ main {
     color: #000;
     font-size: 11px;
   }
+  .bill-photo-viewer { display: none !important; }
   .print-only .p-header { text-align: center; margin-bottom: 6px; }
   .print-only .p-header .rf { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 700; }
   .print-only .p-header .title { font-size: 12px; font-weight: 700; margin-top: 1px; }

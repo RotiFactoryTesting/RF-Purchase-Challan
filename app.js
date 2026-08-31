@@ -105,10 +105,14 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 function startListeners() {
+  if (unsubChallans) return;
   unsubChallans = onSnapshot(query(collection(db, "challans"), orderBy("createdAt", "desc")), (snap) => {
     allChallans = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     if (currentView === "dashboard") renderDashboard();
     if (currentView === "detail") renderDetail();
+  }, (error) => {
+    console.error(error);
+    toast("Live updates are temporarily unavailable. Check your connection.", true);
   });
   if (currentView === "new" || currentView === "admin-items") startItemListener();
   startMasterListeners();
@@ -139,14 +143,16 @@ function startMasterListeners() {
     unsubRequesters = onSnapshot(collection(db, "requesterMaster"), (snap) => {
       requesterMasterList = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => a.name.localeCompare(b.name));
-      if (currentView === "new" || currentView === "admin-lists") renderShell();
+      if (currentView === "new") renderNewChallan();
+      if (currentView === "admin-lists") renderAdminLists();
     });
   }
   if (!unsubDepartments) {
     unsubDepartments = onSnapshot(collection(db, "departmentMaster"), (snap) => {
       departmentMasterList = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => a.name.localeCompare(b.name));
-      if (currentView === "new" || currentView === "admin-lists") renderShell();
+      if (currentView === "new") renderNewChallan();
+      if (currentView === "admin-lists") renderAdminLists();
     });
   }
 }
@@ -717,6 +723,11 @@ async function cancelChallan(challanId) {
       cancelledByUid: currentUser.uid,
       cancelledAt: Timestamp.now()
     });
+    const updated = await getDoc(doc(db, "challans", challanId));
+    if (updated.exists()) {
+      allChallans = allChallans.map(challan => challan.id === challanId ? { id: challanId, ...updated.data() } : challan);
+      renderDetail();
+    }
     toast("Requisition cancelled.");
   } catch (e) {
     console.error(e);
@@ -773,6 +784,11 @@ async function decideApproval(challanId, decision) {
       managerApproval: { decision, note, byName: currentUser.name, byUsername: currentUser.username || "", byUid: currentUser.uid, at: Timestamp.now() },
       status: decision === "approved" ? "approved" : "rejected"
     });
+    const updated = await getDoc(doc(db, "challans", challanId));
+    if (updated.exists()) {
+      allChallans = allChallans.map(challan => challan.id === challanId ? { id: challanId, ...updated.data() } : challan);
+      renderDetail();
+    }
     toast(decision === "approved" ? "Requisition approved." : "Requisition rejected.");
   } catch (e) {
     console.error(e);
@@ -801,10 +817,13 @@ function renderPurchaseCard(c) {
       ${p.billAttached && p.billPhoto ? `
         <div style="margin-top:14px;">
           <div class="k" style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-faint);margin-bottom:6px;">Bill Photo</div>
-          <img src="${p.billPhoto}" alt="Bill photo" style="max-width:220px;border:1px solid var(--line);border-radius:6px;cursor:pointer;" onclick="window.open(this.src, '_blank')">
+          <button type="button" class="bill-photo-button" id="viewBillPhotoBtn" aria-label="Open bill photo">
+            <img src="${p.billPhoto}" alt="Bill photo - click to enlarge">
+          </button>
         </div>
       ` : ""}
     `;
+    document.getElementById("viewBillPhotoBtn").onclick = () => showBillPhoto(p.billPhoto);
     return;
   }
 
@@ -877,6 +896,27 @@ function renderPurchaseCard(c) {
   document.getElementById("completePurchaseBtn").onclick = () => completePurchase(c.id);
 }
 
+function showBillPhoto(dataUrl) {
+  const overlay = document.createElement("div");
+  overlay.className = "bill-photo-viewer";
+  overlay.innerHTML = `
+    <button type="button" class="bill-photo-close" aria-label="Close bill photo">×</button>
+    <img src="${dataUrl}" alt="Bill photo">
+  `;
+  document.body.appendChild(overlay);
+  const image = overlay.querySelector("img");
+  const close = () => overlay.remove();
+  overlay.querySelector(".bill-photo-close").onclick = close;
+  overlay.onclick = (event) => { if (event.target === overlay) close(); };
+  image.onclick = () => image.classList.toggle("zoomed");
+  const closeOnEscape = (event) => {
+    if (event.key !== "Escape") return;
+    close();
+    document.removeEventListener("keydown", closeOnEscape);
+  };
+  document.addEventListener("keydown", closeOnEscape);
+}
+
 function compressImageToDataUrl(file, maxDimension, quality) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -942,6 +982,11 @@ async function completePurchase(challanId) {
       status: "purchased"
     });
     draftBillPhoto = null;
+    const updated = await getDoc(doc(db, "challans", challanId));
+    if (updated.exists()) {
+      allChallans = allChallans.map(challan => challan.id === challanId ? { id: challanId, ...updated.data() } : challan);
+      renderDetail();
+    }
     toast("Purchase recorded.");
   } catch (e) {
     console.error(e);
