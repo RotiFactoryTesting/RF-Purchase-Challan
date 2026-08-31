@@ -1005,7 +1005,7 @@ function renderPrintable(c) {
     <tr><td>${i + 1}</td><td>${esc(it.name)}</td><td>${esc(it.qty)}</td><td>${fmtMoney(it.price)}</td><td>${esc(it.purpose)}</td></tr>
   `).join("");
 
-  area.innerHTML = `
+  const copy = `
     <div class="p-header">
       <div class="rf">RF FACTORY</div>
       <div class="title">PURCHASE REQUISITION CHALLAN</div>
@@ -1044,16 +1044,10 @@ function renderPrintable(c) {
           <td><b>Total Amount Paid</b></td><td>${c.purchase ? fmtMoney(c.purchase.amountPaid) : ""}</td></tr>
       <tr><td><b>Bill Copy Attached</b></td><td colspan="3">${c.purchase ? (c.purchase.billAttached ? "Yes" : "No") : ""}</td></tr>
     </table>
-    ${c.purchase && c.purchase.billAttached && c.purchase.billPhoto ? `
-      <div style="margin-top:6px;">
-        <b style="font-size:10.5px;">Bill Photo:</b><br>
-        <img src="${c.purchase.billPhoto}" style="max-width:100mm;max-height:60mm;margin-top:3px;border:1px solid #333;">
-      </div>
-    ` : ""}
-
-    <p style="font-size:11px;color:#555;">Note: No purchase without Manager approval. Bill copy must be attached before filing.<br>
+    <p class="p-footer">Note: No purchase without Manager approval. Bill copy must be attached before filing.<br>
     <span class="hi-inline">नोट: मैनेजर की स्वीकृति के बिना कोई क्रय न करें। फाइल करने से पहले बिल कॉपी अवश्य लगाएं।</span></p>
   `;
+  area.innerHTML = `<div class="print-sheet"><div class="print-copy">${copy}</div></div>`;
 }
 
 // ---------- admin: users ----------

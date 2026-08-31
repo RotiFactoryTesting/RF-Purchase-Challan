@@ -602,7 +602,7 @@ main {
   cursor: pointer;
 }
 @media print {
-  @page { size: A5 portrait; margin: 8mm; }
+  @page { size: A4 portrait; margin: 6mm 10mm 8mm; }
   body > *:not(#app) { display: none !important; }
   #app > .topbar,
   #app > .tabs,
@@ -613,21 +613,45 @@ main {
   .print-only {
     display: block;
     position: relative;
-    top: 0; left: 0;
+    top: -2mm; left: 0;
     width: 100%;
     padding: 0;
     font-family: 'Inter', sans-serif;
     color: #000;
     font-size: 11px;
   }
+  html, body, #app, #mainArea { width: 190mm; }
+  .print-only {
+    min-height: 277mm;
+    box-sizing: border-box;
+  }
+  .print-sheet {
+    width: 190mm;
+    min-height: 277mm;
+  }
+  .print-copy {
+    min-width: 0;
+    width: 190mm;
+    min-height: 277mm;
+    box-sizing: border-box;
+    padding: 0;
+  }
+  .print-only table,
+  .print-only .p-section-title,
+  .print-only .p-header,
+  .print-only p { break-inside: avoid; }
   .bill-photo-viewer { display: none !important; }
   .print-only .p-header { text-align: center; margin-bottom: 6px; }
-  .print-only .p-header .rf { font-family: 'Barlow Condensed', sans-serif; font-size: 17px; font-weight: 700; }
-  .print-only .p-header .title { font-size: 12px; font-weight: 700; margin-top: 1px; }
-  .print-only .p-header .hi { font-family: 'Noto Sans Devanagari', sans-serif; font-size: 10px; }
-  .print-only table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
-  .print-only th, .print-only td { border: 1px solid #333; padding: 3px 5px; font-size: 9.5px; text-align: left; line-height: 1.3; }
-  .print-only .p-section-title { font-weight: 700; font-size: 10.5px; margin: 6px 0 3px; }
-  .print-only .hi-inline { font-family: 'Noto Sans Devanagari', sans-serif; font-size: 8.5px; color: #444; }
-  .print-only p { font-size: 8.5px; margin: 6px 0 0; }
+  .print-only .p-header .rf { font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 700; }
+  .print-only .p-header .title { font-size: 17px; font-weight: 700; margin-top: 2px; }
+  .print-only .p-header .hi { font-family: 'Noto Sans Devanagari', sans-serif; font-size: 14px; }
+  .print-only table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  .print-only th, .print-only td { border: 1px solid #333; padding: 6px 8px; font-size: 13px; text-align: left; line-height: 1.35; }
+  .print-only .p-section-title { font-weight: 700; font-size: 14px; margin: 10px 0 5px; }
+  .print-only .hi-inline { font-family: 'Noto Sans Devanagari', sans-serif; font-size: 11px; color: #444; }
+  .print-only p.p-footer {
+    font-size: 10px;
+    line-height: 1.3;
+    margin: 8px 0 0;
+  }
 }
